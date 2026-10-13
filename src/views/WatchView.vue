@@ -981,3 +981,13 @@ button:disabled { opacity: 0.6; cursor: default; }
 .stage :deep(.danmaku-bar) { position: absolute; top: 100%; left: 0; right: 0; }
 @media (max-width: 560px) { .stage { margin-bottom: 85px; } }
 </style>
+
+<style scoped>
+.player-tools { padding: 12px 14px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); }
+.player-tools button, .player-tools select, .player-tools input[type="number"] { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-alt, #f5f8fa); color: var(--text); font: inherit; padding: 7px 9px; }
+.player-tools button { cursor: pointer; color: #008aa5; background: var(--accent-soft, #e9f9fc); }
+.player-tools button:hover { border-color: var(--accent); }
+.player-tools input[type="checkbox"] { accent-color: var(--accent); }
+.player-tools .muted { flex-basis: 100%; }
+.player-tools :focus-visible, .episodes li:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>

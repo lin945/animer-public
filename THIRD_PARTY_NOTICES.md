@@ -829,7 +829,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### hono 4.13.5
+### hono 4.13.13
 
 License: MIT.
 
@@ -1197,7 +1197,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### source-map-js 1.2.1
+### source-map-js 1.2.2
 
 License: BSD-3-Clause.
 
@@ -1297,7 +1297,7 @@ If the Work includes a "NOTICE" text file as part of its distribution, then any 
 END OF TERMS AND CONDITIONS
 ```
 
-### undici 7.29.0
+### undici 7.30.0
 
 License: MIT.
 

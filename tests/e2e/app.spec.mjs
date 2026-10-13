@@ -1,7 +1,8 @@
 import { test, expect, subject, readyVideo, noOverflow } from './fixtures.mjs';
 
 test('search, calendar, watch and browser back/forward navigation', async ({ page, fixture }) => {
-  await page.goto('/');
+  const response = await page.goto('/');
+  expect(response.headers()['content-security-policy']).toContain("object-src 'none'");
   await expect(page.locator('.card')).toHaveCount(1);
   await noOverflow(page);
   await page.getByRole('link', { name: '新番日历', exact: true }).click();

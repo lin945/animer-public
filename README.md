@@ -31,6 +31,7 @@
 
 ```sh
 npm ci
+cp wrangler.example.toml wrangler.toml
 npm run dev
 ```
 
@@ -40,6 +41,8 @@ npm run dev
 - Pages Functions/本地 D1/KV：`http://localhost:8788`
 
 前端 `/api/*` 请求反代到本地后端。D1/KV 模拟数据位于 `.wrangler/state`，不要提交。若迁移失败，检查日志后单独运行 `npm run db:local`；不要把页面能打开当作数据库已经初始化。
+
+`wrangler.example.toml` 包含仅用于本地模拟的占位资源 ID。复制后的 `wrangler.toml` 已被 Git 忽略；连接远程资源前必须替换为自己账户的实际绑定，不要把占位 ID 用于生产。
 
 可分开运行 `npm run dev:api` 与 `npm run dev:web`。开发脚本支持 `API_PORT`、`WEB_PORT`、`DB_NAME` 和 `SKIP_DB_MIGRATE=1`；修改 API 端口时也需确认 Vite 代理目标一致。
 
@@ -51,7 +54,8 @@ npm run dev
 npm run check
 ```
 
-- `check` 依次运行前端类型检查、Workers 类型检查、全部测试、后端转译检查、生产构建和法律声明复制。可分别运行 `type-check`、`type-check:worker`、`test`、`check:api`、`build` 定位失败。
+- `check` 依次运行前端类型检查、Workers 类型检查、全部单元/组件测试、后端转译检查、生产构建和法律声明复制，最后使用 Wrangler 实际编译 Pages Functions（`check:pages`）。可分别运行各脚本定位失败。
+- `npm run test:e2e` 单独运行 Playwright 浏览器测试；测试夹具应用生产静态安全响应头。浏览器依赖需按 Playwright 的安装说明准备。夹具检查不等于线上 GitHub 登录或所有真实播放源均已验收。
 - `type-check` 检查前端 TypeScript/Vue；`type-check:worker` 使用 Workers 类型环境检查 `functions/` 和 `server/`。`check:api` 的转译检查不能代替类型检查。
 - 单元/组件测试覆盖本地状态、播放选择、取消与请求竞争、弹幕及访问控制等逻辑；不证明所有第三方源在当前网络环境可播放。
 - `build` 输出 `dist/`，并包含许可证和第三方声明；`npm run preview` 仅预览静态构建，不启动 Pages Functions。
@@ -64,7 +68,7 @@ npm run check
 详见 [部署说明](docs/deploy-summary.md)。基本配置：
 
 1. 创建 Cloudflare Pages 项目，构建命令 `npm ci && npm run build`，输出目录 `dist`。
-   构建时设置 `VITE_SOURCE_URL` 为该部署版本的公开源码地址，页脚才会显示源码入口；发布前确认链接无需登录即可访问。
+   页脚源码默认指向 [lin945/animer-public](https://github.com/lin945/animer-public)。部署修改版或 fork 时，构建设置 `VITE_SOURCE_URL` 为对应版本的公开源码地址；发布前确认链接无需登录即可访问。
 2. 配置 D1 绑定 `DB` 和 KV 绑定 `CACHE`。使用自己账户的资源，不复用其他部署的资源标识。
 3. 审查迁移后执行 `npm run db:remote`；这是远程数据库写操作，执行前确认目标账户、数据库及备份。
 4. 配置 GitHub OAuth 应用、管理员白名单和环境变量，再开放管理操作；前端隐藏入口不能代替后端校验。

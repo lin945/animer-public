@@ -153,3 +153,7 @@ onBeforeUnmount(() => { active = false; cancelSearch() })
 @media (max-width: 420px) { .quick-search button:last-child { display: none; }.section-sub { display: none; }.recent-grid { grid-template-columns: minmax(0, 1fr); }.recent-cover { width: 57px; height: 78px; } }
 </style>
 
+
+<style scoped>
+.section-sub button { margin-left: 8px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; background: var(--surface); color: var(--muted); cursor: pointer; font: inherit; }
+</style>
