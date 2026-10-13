@@ -1,0 +1,57 @@
+:root {
+  --bg: #f7f9fb;
+  --surface: #ffffff;
+  --border: #e6ebf0;
+  --text: #202632;
+  --muted: #758292;
+  --accent: #00a8cf;
+  --accent-soft: #e8f9fd;
+  --shadow: 0 12px 32px rgba(33, 64, 82, 0.07);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: 360px;
+  background: linear-gradient(180deg, #eaf9fb 0%, rgba(247, 249, 251, 0) 100%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+a {
+  color: inherit;
+  cursor: pointer;
+}
+
+button {
+  font-family: inherit;
+}
+
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgba(0, 168, 207, .35);
+  outline-offset: 2px;
+}
+
+img {
+  max-width: 100%;
+}
+

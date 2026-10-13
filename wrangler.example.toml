@@ -1,0 +1,13 @@
+# Copy to wrangler.toml for local development; replace IDs only for your deployment.
+name = "animer"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-08-29"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "animer-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "00000000000000000000000000000000"

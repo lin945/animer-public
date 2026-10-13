@@ -1,0 +1,44 @@
+# dependencies
+node_modules
+.idea
+.vscode
+# build output
+dist
+
+# wrangler / cloudflare local state
+.wrangler
+
+# npm cache (local)
+.npm-cache
+
+# logs
+*.log
+npm-debug.log*
+
+# local env / secrets
+.env
+.env.*
+.dev.vars
+
+# misc
+.cf_ids
+.DS_Store
+.nc/
+_probeenv/
+
+# 项目约定：临时脚本 / 日志 / 报告统一放 log/，根目录保持干净（见 README「项目约定」）
+log/
+# 兜底：根目录不允许出现散落的日志/文本文件
+/*.log
+/*.txt
+
+
+!/LICENSE.txt
+
+# Deployment-specific bindings and local screenshots must stay private.
+wrangler.toml
+playwright-report/
+test-results/
+
+# Private agent/workspace notes are never project source.
+.workbuddy/
