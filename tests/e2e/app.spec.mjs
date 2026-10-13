@@ -80,7 +80,9 @@ test('preferences and watch progress survive reload and appear in recent history
   await page.getByRole('checkbox', { name: '自动下一集' }).check();
   await page.getByRole('spinbutton').fill('12');
   await page.getByRole('spinbutton').blur();
-  await page.locator('video').evaluate(v => { v.currentTime = 15; v.dispatchEvent(new Event('timeupdate')); v.dispatchEvent(new Event('pause')); });
+  await expect.poll(() => page.locator('video').evaluate(v => v.seekable.length ? v.seekable.end(v.seekable.length - 1) : 0)).toBeGreaterThan(15);
+  await page.locator('video').evaluate(v => new Promise(resolve => { v.addEventListener('seeked', resolve, {once:true}); v.currentTime = 15; }));
+  await expect.poll(() => page.locator('video').evaluate(v => v.currentTime)).toBeGreaterThanOrEqual(15);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('animer:recent:v1'))[0].position)).toBeGreaterThanOrEqual(15);
   await page.reload();
   await readyVideo(page);

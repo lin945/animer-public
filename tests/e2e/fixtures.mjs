@@ -17,7 +17,15 @@ export const test = base.extend({
       if (url.origin !== origin) { unexpected.push(url.href); await route.abort(); return; }
       const path = url.pathname;
       if (path === '/fixture-cover.svg') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420"><rect width="300" height="420" fill="#289bb6"/><circle cx="150" cy="150" r="85" fill="#ffdc77"/></svg>' });
-      if (path === '/fixture.mp4' || path === '/api/play') return route.fulfill({ contentType: 'video/mp4', body: media });
+      if (path === '/fixture.mp4' || path === '/api/play') {
+        const range = route.request().headers()['range']?.match(/^bytes=(\d+)-(\d*)$/);
+        const start = range ? Number(range[1]) : 0;
+        const end = range && range[2] ? Math.min(Number(range[2]), media.length - 1) : media.length - 1;
+        if (start >= media.length || end < start) return route.fulfill({status:416,headers:{'Content-Range':`bytes */${media.length}`}});
+        return route.fulfill({ status: range ? 206 : 200, contentType: 'video/mp4',
+          headers: { 'Accept-Ranges': 'bytes', 'Content-Length': String(end-start+1), ...(range ? {'Content-Range': `bytes ${start}-${end}/${media.length}`} : {}) },
+          body: media.subarray(start,end+1) });
+      }
       if (!path.startsWith('/api/')) return route.continue();
       requests.push({ path, query: Object.fromEntries(url.searchParams), method: route.request().method() });
       const override = overrides.get(path);
