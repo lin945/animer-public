@@ -13,15 +13,16 @@
     "check:api": "node scripts/check-functions.mjs",
     "db:local": "wrangler d1 migrations apply animer-db --local --persist-to .wrangler/state",
     "db:remote": "wrangler d1 migrations apply animer-db --remote",
-    "build": "vite build && node scripts/copy-legal.mjs",
+    "build": "vite build && node scripts/copy-legal.mjs && node scripts/build-access-helper.mjs",
     "preview": "vite preview",
-    "build-only": "vite build && node scripts/copy-legal.mjs",
+    "build-only": "vite build && node scripts/copy-legal.mjs && node scripts/build-access-helper.mjs",
     "type-check": "vue-tsc --build",
     "test": "node --test tests/*.test.mjs",
     "check": "npm run type-check && npm run type-check:worker && npm test && npm run check:api && npm run build && npm run check:pages",
     "type-check:worker": "tsc -p tsconfig.worker.json",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.mjs",
-    "check:pages": "node scripts/check-pages.mjs"
+    "check:pages": "node scripts/check-pages.mjs",
+    "access-helper": "node scripts/build-access-helper.mjs"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

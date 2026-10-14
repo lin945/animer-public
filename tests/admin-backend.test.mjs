@@ -2,11 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { build } from 'esbuild'
 import { SignJWT } from 'jose'
-const bundle = await build({entryPoints:['functions/api/[[route]].ts'],bundle:true,format:'esm',platform:'browser',write:false,minify:true})
+import { createHash } from 'node:crypto'
+const bundle = await build({entryPoints:['functions/api/[[route]].ts'],bundle:true,format:'esm',platform:'browser',external:['node:crypto'],write:false,minify:true})
 const {onRequest} = await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'))
-const config = {APP_ORIGIN:'https://site.test',GITHUB_CLIENT_ID:'synthetic-client',GITHUB_CLIENT_SECRET:'synthetic-secret',SESSION_SECRET:'synthetic-test-only-key-32-characters-long',ADMIN_GITHUB_ID:'34918880'}
+const accessToken = Buffer.alloc(32,7).toString('base64url')
+const encoded = createHash('sha256').update(accessToken).digest('hex')
+const config = {APP_ORIGIN:'https://site.test',ADMIN_ACCESS_TOKEN_HASH:encoded,SESSION_SECRET:'synthetic-test-only-key-32-characters-long'}
 const key = new TextEncoder().encode(config.SESSION_SECRET)
-async function token(overrides={}) { return '__Host-animer_admin='+await new SignJWT({login:'lin945',provider:'github',...overrides}).setProtectedHeader({alg:'HS256'}).setIssuer(config.APP_ORIGIN).setAudience('animer-admin').setSubject(overrides.sub || config.ADMIN_GITHUB_ID).setIssuedAt().setExpirationTime('1h').sign(key) }
+const credentialVersion = Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('access-link/v1\0'+encoded))).toString('hex')
+async function token(overrides={}) { return '__Host-animer_admin='+await new SignJWT({login:'owner',provider:'link',credentialVersion,...overrides}).setProtectedHeader({alg:'HS256'}).setIssuer(config.APP_ORIGIN).setAudience('animer-admin-link-v1').setSubject(overrides.sub || 'owner').setIssuedAt().setExpirationTime('1h').sign(key) }
 async function call(path, env={}, headers={}, method='GET', body) {
   return onRequest({request:new Request('https://site.test'+path,{method,headers,body}),env,waitUntil(){},passThroughOnException(){}})
 }
@@ -22,7 +26,7 @@ test('anonymous public mutations and diagnostic cache bypass fail',async()=>{
  for(const [p,m] of [['/api/danmaku','POST'],['/api/search?fresh=1','GET'],['/api/resolve?debug=1','GET']]) assert.equal((await call(p,{}, {},m)).status,403)
 })
 test('signed session grants exact owner identity; other ID and forged token fail',async()=>{
- let r=await call('/api/admin/session',config,{Cookie:await token()});assert.equal(r.status,200);assert.equal((await r.json()).login,'lin945')
+ let r=await call('/api/admin/session',config,{Cookie:await token()});assert.equal(r.status,200);assert.equal((await r.json()).login,'owner')
  r=await call('/api/admin/session',config,{Cookie:await token({sub:'12345'})});assert.equal(r.status,403)
  r=await call('/api/admin/session',config,{Cookie:'__Host-animer_admin=eyJhbGciOiJub25lIn0.e30.'});assert.equal(r.status,403)
  r=await call('/api/admin/session',{...config,SESSION_SECRET:'different-test-key-32-characters-long'},{Cookie:await token()});assert.equal(r.status,403)
@@ -34,7 +38,7 @@ test('authenticated admin mutation rejects cross-origin and missing CSRF header'
  }
 })
 test('expired sessions and alternate Pages hosts fail closed',async()=>{
- const expired=await new SignJWT({login:'lin945',provider:'github'}).setProtectedHeader({alg:'HS256'}).setIssuer(config.APP_ORIGIN).setAudience('animer-admin').setSubject(config.ADMIN_GITHUB_ID).setIssuedAt(1).setExpirationTime(2).sign(key)
+ const expired=await new SignJWT({login:'owner',provider:'link'}).setProtectedHeader({alg:'HS256'}).setIssuer(config.APP_ORIGIN).setAudience('animer-admin-link-v1').setSubject('owner').setIssuedAt(1).setExpirationTime(2).sign(key)
  assert.equal((await call('/api/admin/session',config,{Cookie:'__Host-animer_admin='+expired})).status,403)
  const r=await onRequest({request:new Request('https://preview.animer.pages.dev/api/subscriptions',{headers:{Cookie:await token()}}),env:config,waitUntil(){},passThroughOnException(){}});assert.equal(r.status,403)
 })
@@ -78,4 +82,16 @@ test('admin mutations require bounded valid JSON and reject storing personal coo
  const headers={Cookie:await token(),Origin:'https://site.test','X-Admin-Request':'1','Content-Type':'application/json'}
  assert.equal((await call('/api/admin/media-sources/1',config,headers,'PATCH',JSON.stringify({cookie:'personal-cookie'}))).status,400)
  assert.equal((await call('/api/admin/media-sources/1',config,headers,'PATCH',JSON.stringify({padding:'x'.repeat(17000)}))).status,400)
+})
+
+test('access link passes the API middleware and its cookie opens the admin session without cache invalidation',async()=>{
+ const CACHE=kv();const DB=db([{attempts:1,window_start:Math.floor(Date.now()/1000)}]);const env={...config,DB,CACHE}
+ const headers={Origin:config.APP_ORIGIN,'X-Admin-Request':'1','Content-Type':'application/json','CF-Connecting-IP':'203.0.113.4'}
+ const response=await call('/api/auth/access',env,headers,'POST',JSON.stringify({token:accessToken}))
+ assert.equal(response.status,200);assert.equal((await response.json()).provider,'link')
+ const Cookie=response.headers.get('Set-Cookie').split(';')[0]
+ assert.equal((await call('/api/admin/session',env,{Cookie})).status,200)
+ assert.equal(CACHE.values.size,0,'login must not invalidate public data caches')
+ assert.equal((await call('/api/auth/access',env,{...headers,Origin:'https://evil.test'},'POST','{}')).status,403)
+ assert.equal((await call('/api/auth/github/login',env)).status,404)
 })

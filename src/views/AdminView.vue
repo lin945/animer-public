@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ApiError, adminSession, adminLogout, adminMediaSources, checkSourceHealth, updateSource, type MediaSource } from '../api'
+import { ApiError, adminSession, adminAccess, adminLogout, adminMediaSources, checkSourceHealth, updateSource, type MediaSource } from '../api'
 import SubscriptionStatus from './SubscriptionStatus.vue'
+import { takeAdminAccess, clearAdminAccess, ADMIN_ACCESS_EVENT } from '../admin-access'
 
 const authorized = ref(false)
 const verifying = ref(false)
@@ -12,12 +13,12 @@ const message = ref('')
 const login = ref('')
 const loggingOut = ref(false)
 const logoutFailed = ref(false)
-const callbackState = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('auth') : null
 let controller = new AbortController()
 const gateMessage = computed(() => ({
-  401: callbackState === 'denied' ? '这个 GitHub 账号没有管理权限，请使用站点所有者账号登录。' : callbackState === 'failed' ? 'GitHub 登录未完成，请重试。' : '请使用站点所有者的 GitHub 账号登录。',
-  403: '仅站点所有者的 GitHub 账号可以访问此页面。',
-  503: 'GitHub 管理员登录尚未配置或暂时不可用，请联系站点所有者。',
+  401: '此页面需要有效的管理链接。请通过站点所有者提供的链接访问。',
+  403: '无法验证管理访问权限。请使用有效的管理链接。',
+  429: '请求过于频繁，请稍后使用管理链接重试。',
+  503: '管理访问暂不可用，请联系站点所有者。',
 }[gateStatus.value] || '暂时无法验证管理员身份，请稍后重试。'))
 
 function handleError(error: unknown) {
@@ -55,6 +56,14 @@ async function verify() {
   login.value = ''
   logoutFailed.value = false
   try {
+    const access = takeAdminAccess()
+    if (access.present) {
+      if (!access.token) throw new ApiError(403, '无效的管理链接')
+      let exchange: Promise<void>
+      try { exchange = adminAccess(access.token, request.signal) } finally { access.token = null }
+      await exchange
+      if (request.signal.aborted || request !== controller) return
+    }
     const session = await adminSession(request.signal)
     if (request.signal.aborted || request !== controller) return
     login.value = session?.login || ''
@@ -85,6 +94,7 @@ async function run(action: () => Promise<unknown>, success: string) {
 }
 async function logout() {
   if (loggingOut.value) return
+  clearAdminAccess()
   // Abort parent and subscription requests before any logout network operation.
   controller.abort()
   controller = new AbortController()
@@ -118,8 +128,20 @@ function checkHealth() {
     if (!result.ok) throw new Error(result.error || '健康检查失败')
   }, '健康检查已完成。')
 }
-onMounted(verify)
+function receiveAccess() {
+  // Do not race a logout cookie response with a new session exchange.
+  if (loggingOut.value) { clearAdminAccess(); return }
+  controller.abort()
+  verifying.value = false
+  void verify()
+}
+onMounted(() => {
+  if (typeof window !== 'undefined') window.addEventListener(ADMIN_ACCESS_EVENT, receiveAccess)
+  return verify()
+})
 onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') window.removeEventListener(ADMIN_ACCESS_EVENT, receiveAccess)
+  clearAdminAccess()
   controller.abort()
   sources.value = []
   authorized.value = false
@@ -130,21 +152,20 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="admin">
-    <header><p class="eyebrow">ANIMER · ADMIN</p><h1>播放源管理</h1><p>管理订阅与源健康状态。仅站点所有者可通过 GitHub 登录管理。</p></header>
+    <header><p class="eyebrow">ANIMER · ADMIN</p><h1>播放源管理</h1><p>管理订阅与源健康状态。通过专属管理链接验证访问权限。</p></header>
     <div v-if="!authorized" class="panel gate" role="status" aria-live="polite">
       <template v-if="loggingOut">正在退出登录…</template>
       <template v-else-if="verifying">正在验证管理员身份…</template>
       <template v-else>
-        <h2>{{ gateStatus ? `访问受限 · ${gateStatus}` : '无法连接管理服务' }}</h2>
+        <h2>{{ gateStatus === 401 ? '需要管理访问权限' : gateStatus ? `访问受限 · ${gateStatus}` : '无法连接管理服务' }}</h2>
         <p>{{ gateMessage }}</p>
-        <p v-if="message">{{ message }}</p>
+        <p v-if="message" role="alert">{{ message }}</p>
         <button v-if="logoutFailed" @click="logout">重试退出登录</button>
-        <template v-else><button @click="verify">重新验证</button>
-        <a v-if="gateStatus === 401 || gateStatus === 403" href="/api/auth/github/login">使用 GitHub 登录</a></template>
+        <button v-else @click="verify">重新验证现有会话</button>
       </template>
     </div>
     <template v-else>
-      <div class="toolbar session"><p>已验证 GitHub 所有者<span v-if="login"> · {{ login }}</span></p><button @click="logout">退出登录</button></div>
+      <div class="toolbar session"><p>管理会话已验证<span v-if="login"> · {{ login }}</span></p><button @click="logout">退出登录</button></div>
       <SubscriptionStatus :authenticated="authorized" :session-signal="controller.signal" @access-error="handleError" @synced="refreshSources" />
       <section class="panel">
         <div class="toolbar"><h2>播放源</h2><button :disabled="busy || verifying" @click="checkHealth">{{ busy ? '处理中…' : '检查健康状态' }}</button></div>
@@ -170,7 +191,7 @@ h1 { margin: 8px 0; } h2 { font-size: 18px; margin: 0; }
 p { color: var(--muted); line-height: 1.7; }
 .panel { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); padding: 22px; margin-bottom: 20px; }
 .toolbar, .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }.toolbar { justify-content: space-between; }
-button, .gate a { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 13px; color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
-button:disabled { opacity: .5; cursor: wait; }.gate a { margin-left: 10px; display: inline-block; }
+button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 13px; color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
+button:disabled { opacity: .5; cursor: wait; }
 .sources { list-style: none; padding: 0; }.sources > li { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--border); }.sources p { margin: 4px 0; font-size: 13px; overflow-wrap: anywhere; }
 </style>

@@ -15,64 +15,70 @@
 
 `npm run db:local` 应用本地迁移。`npm run db:remote` 修改远程数据库，运行前先确认 Wrangler 账户及目标库，按需要备份。旧版本可能包含个人观看记录/收藏或源凭据字段；升级前应审查并清理不再需要的私有数据，不能因为新界面不再写入就假定旧数据消失。
 
-## 2. GitHub 管理员登录
+## 2. 秘密管理链接
 
-默认管理员登录方式是直接使用 GitHub OAuth，无需 Cloudflare Access 或 Zero Trust。管理入口为 `/admin`；后端使用 GitHub **数字用户 ID** 白名单，登录成功不等于获得管理权限，也不依赖可改名的用户名或公开邮箱。
+管理入口使用高熵秘密链接换取会话，没有用户名/密码表单、注册或访客账号，也不需要 GitHub OAuth、Cloudflare Access 或 Zero Trust。链接授予任何持有人完整管理权限：**持有链接就等于持有管理凭据**，不是靠地址不显眼来保护站点。
 
-### 创建专用 OAuth 应用
+静态网页源码、SPA 和验证用引导页面仍可公开获取。未授权状态不展示敏感管理数据或可用操作；真正的权限边界是服务端令牌验证与每个管理 API 的会话校验。不要把“没有导航入口”或“前端显示锁定页”当作源码/HTML 被服务器保密。
 
-在 [GitHub OAuth Apps 设置](https://github.com/settings/developers)创建一个仅用于此站点登录的 OAuth App：
+### 运行时配置
 
-- Homepage URL：站点的规范 HTTPS origin，例如 `https://example.com`
-- Authorization callback URL：`https://example.com/api/auth/github/callback`
-- 使用精确匹配的回调地址，不开启通配回调
-- 不复用已获仓库、组织或其他扩大权限的 OAuth 应用
-
-以实际部署 origin 替换示例域名，并保持 OAuth 回调、`APP_ORIGIN` 和用户打开的站点域名一致。本项目的生产站点如使用 `https://anime.bilibili.asia`，对应回调为 `https://anime.bilibili.asia/api/auth/github/callback`。
-
-登录请求显式使用空 scope，只获取识别账户所需的公开身份，不申请仓库、组织、邮箱或刷新令牌权限。后端还会拒绝带额外授权 scope 的令牌。若专用应用曾被授予额外权限，应在 GitHub 撤销该授权后重新登录，不应放宽后端检查。OAuth 创建和授权需由账户所有者确认。
-
-### Cloudflare 配置
-
-在 Pages 项目的运行时环境配置以下变量，生产与预览环境分开设置：
+在 Pages 的运行时设置以下变量，生产与测试环境分开设置：
 
 | 名称 | 类型 | 值 |
 | --- | --- | --- |
-| `GITHUB_CLIENT_ID` | 普通变量 | GitHub OAuth App 的 Client ID |
-| `GITHUB_CLIENT_SECRET` | Secret | 该 OAuth App 的 Client Secret |
-| `SESSION_SECRET` | Secret | 用安全随机方式生成的高强度会话签名密钥；代码要求 UTF-8 长度至少 32 字节 |
+| `ADMIN_ACCESS_TOKEN_HASH` | Secret | 原始管理令牌文本的 SHA-256 摘要，恰好 64 个小写十六进制字符 |
+| `SESSION_SECRET` | Secret | 独立的高强度随机签名密钥，UTF-8 长度至少 32 字节 |
 | `APP_ORIGIN` | 普通变量 | 规范 HTTPS origin，不含路径或尾部斜杠，例如 `https://example.com` |
-| `ADMIN_GITHUB_ID` | 普通变量 | 唯一允许管理的 GitHub 数字用户 ID，不是用户名 |
 
-Client Secret 和会话签名密钥由部署者通过 Cloudflare 的安全 Secrets 输入框填写。不要放进聊天、源码、`VITE_*` 前端变量、截图、命令行历史或公开日志。Client ID、管理员公开数字 ID、站点 origin 不是登录密钥。配置变更后重新部署并验收，不要把“已填写变量”当作登录成功。
+管理令牌必须由可信本地工具生成 32 个密码学随机字节（256 位熵），编码成 43 字符、无填充的规范 base64url 字符串。不要用短密码、可猜的单词或自己编的“秘密路径”代替随机令牌。摘要针对编码后的原始令牌文本计算，不是对完整 URL 或解码后的字节计算。
 
-### 登录、会话与退出
+原始令牌和完整管理链接只由站长在自己的可信设备生成、查看和保管，例如保存在自己的密码管理器。令牌、链接、摘要和会话密钥都不要发送到聊天、提交到仓库、写进 `VITE_*`、命令行参数、截图或日志。服务器只需要摘要；不需要上传原始管理链接。
 
-- `GET /api/auth/github/login`：开始 GitHub 登录
-- `GET /api/auth/github/callback`：验证回调并创建站点会话
-- `GET /api/auth/status`：查询是否已配置登录及身份提供商，不表示当前用户已登录
-- `GET /api/admin/session`：验证管理员会话
-- `POST /api/auth/logout`：退出当前浏览器会话；要求同源 Origin、`X-Admin-Request: 1`、JSON 正文 `{}`
+### 本地生成与安全保存
 
-OAuth 使用随机 state 与 PKCE S256。流程 Cookie `__Host-animer_oauth` 有效 10 分钟；管理员 Cookie `__Host-animer_admin` 有效 1 小时。两者均为签名 Cookie，设置 `Secure`、`HttpOnly`、`SameSite=Lax`、`Path=/`，不设置 Domain。Cookie 仅代表登录身份，不包含观看记录。
+运行 `npm ci`、`npm run access-helper`，生成 `dist/animer-access-helper.html`（正常 `npm run build` 也会生成）。将这个自包含文件下载到自己的可信设备，断网后打开本地文件；不要在远程控制、共享屏幕或被记录的浏览器中生成真实管理凭据。工具仅用浏览器原生加密 API 生成随机令牌、计算摘要；不需要外部加密库、CDN 或网络服务。
 
-GitHub access token 只用于当前回调读取账户身份，之后不保存在 D1、KV 或浏览器。站点会话使用独立签名及用途校验；后端每次请求重新检查签名、到期时间、origin 与管理员数字 ID。退出清除当前浏览器 Cookie；如需使所有已签发会话立即失效，应安全轮换 `SESSION_SECRET`。在 GitHub 撤销 OAuth 授权与清除本站现有会话是两件事，已签发会话仍可能持续到过期或密钥轮换。
+1. 输入站点的规范 HTTPS origin，确认与 `APP_ORIGIN` 一致。
+2. 在本地生成管理链接和摘要。链接形如 `https://example.com/admin#access=<token>`，示例中的占位符不能作为真实凭据使用。
+3. 自己把摘要复制到 Cloudflare Secret `ADMIN_ACCESS_TOKEN_HASH`；保管好完整链接，不将其交给自动化脚本或助手代填。
+4. 另行安全配置独立 `SESSION_SECRET`。生成工具不会修改 Cloudflare，不会因为显示了输出就自动启用权限。
+5. 配置并验收后，在可信浏览器打开自己的管理链接。清除工具页内容并关闭；按需要清除系统剪贴板，工具不会自动修改剪贴板。
 
-管理写请求还要求同源 Origin、`X-Admin-Request: 1`、JSON 正文，并限制正文大小。管理响应不允许共享缓存。旧管理接口别名同样校验登录身份，不能用来绕过 `/api/admin/*`。
+URL 的 `#access=` 片段不会随初始 HTTP 请求或普通 Referer 自动发送。应用启动时在路由挂载前从地址栏和当前历史项移除片段，再通过同源 HTTPS POST 交换会话。原始令牌不放入 localStorage、sessionStorage 或路由状态；这不能消除书签同步、复制粘贴、浏览器扩展、屏幕共享或设备被控制导致的泄露风险。不要把链接粘贴到搜索框、公共聊天、短链服务或共享文档。
+
+### 接口与会话
+
+- `POST /api/auth/access`：JSON `{token}`，要求规范同源 Origin、`X-Admin-Request: 1` 和 `application/json`，正文最多 512 字节
+- `GET /api/auth/status`：查询配置状态及 `link` 提供商，不表示当前用户已获授权
+- `GET /api/admin/session`：验证当前管理员会话
+- `POST /api/auth/logout`：清除当前浏览器会话，要求同源 Origin、`X-Admin-Request: 1` 和 JSON 正文 `{}`
+
+管理员 Cookie `__Host-animer_admin` 有效 1 小时，设置 `Secure`、`HttpOnly`、`SameSite=Lax`、`Path=/`，不设置 Domain。Cookie 是签名身份凭据，不包含原始管理令牌或观看记录。每个管理请求检查签名、用途、期限、origin 和当前摘要版本。
+
+管理写请求还要求同源 Origin、自定义请求头和 JSON，管理响应不共享缓存。旧管理接口别名也经过同样鉴权，不能绕过 `/api/admin/*`。此方案不创建登录计数表、用户数据库或个人登录流水。
+
+### 到期、退出与撤销
+
+- 会话在 1 小时后到期；需要时重新打开秘密链接建立新会话。
+- **链接本身没有自动过期或一次性限制**，当前令牌未撤销时可以再次换取会话。
+- 退出仅清除当前浏览器 Cookie，不使该链接或其他设备上的会话失效。
+- 链接丢失或疑似泄露时，在自己的可信设备重新生成令牌，替换 `ADMIN_ACCESS_TOKEN_HASH` 并重新部署。新摘要生效后，旧链接和旧摘要版本的会话均失效。
+- 轮换 `SESSION_SECRET` 会使已有管理员会话和媒体代理票据一起失效，播放端可能需要重新解析；但如果摘要未变，原秘密链接仍能建立新会话。撤销链接必须更换摘要。
+
+旧密码或 GitHub 会话不适用于此方案。代码升级不会替你删除外部 OAuth 应用、撤销授权或清理旧平台变量；如曾配置，另行审查并移除不再需要的凭据。此前未部署的密码方案无需执行其登录计数迁移。
 
 ### 本地与备用域名
 
-管理员功能只接受 `APP_ORIGIN`。通过 `pages.dev`、预览域名或其他别名访问时不会沿用生产登录；如要测试完整登录，使用单独 OAuth 应用、单独强随机会话密钥和明确的 HTTPS 开发 origin。
+管理员功能只接受 `APP_ORIGIN`。通过 `pages.dev`、预览域名或其他别名访问时，不沿用生产权限。完整验收使用单独的 HTTPS 测试 origin、合成令牌及独立会话密钥；不使用真实管理链接做自动测试。
 
-缺少必要配置时保持管理端关闭。普通 HTTP 本地开发用于目录/播放与模拟测试，不提供默认密码、免鉴权开关或匿名回退。可通过本地 D1 工具准备有权使用的数据；完整登录需在匹配回调的 HTTPS 环境验收。
-
-参考：[GitHub OAuth web flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)。
+普通 HTTP 本地开发用于目录/播放和模拟测试，不提供默认管理令牌、免鉴权开关或匿名回退。配置缺失时管理端保持关闭。可以用本地 D1 工具准备授权测试数据；页面加载成功不表示权限配置已经验收。
 
 ## 3. 配置播放源
 
 登录 `/admin` 后管理订阅、启停源和健康检查。订阅属于外部数据，必须确认使用权限。Cloudflare Workers 的抓取能力与原生客户端不同，不承诺绕过站点挑战、登录墙、地理限制或播放授权。
 
-源 Cookie/UA 写入接口已禁用，旧记录中的个人凭据不再参与转发。现有值不会因代码升级自动删除；需要按部署者的数据保留策略另行清理。当前新增迁移只增加索引，不执行清空历史数据。
+源 Cookie/UA 写入接口已禁用，旧记录中的个人凭据不再参与转发。现有值不会因代码升级自动删除；需要按部署者的数据保留策略另行清理。现有迁移不执行清空历史数据；管理链接方案不增加登录计数或用户表。
 
 普通访问者只读公共目录及必要播放元数据，不拥有订阅同步、健康检查、源修改或私有诊断权限。浏览器观看记录和偏好保存在 localStorage，不上传个人观看数据库。
 
@@ -91,10 +97,10 @@ GitHub access token 只用于当前回调读取账户身份，之后不保存在
 1. `npm run check`（包括 Wrangler Pages Functions 编译）通过；另行运行 `npm run test:e2e` 验证浏览器行为及生产静态安全头。
 2. 数据库迁移已在预定目标验证；不记录真实个人凭据作为测试数据。
 3. 匿名访问公开目录成功；匿名/伪造/过期身份的管理请求失败。
-4. GitHub 管理员登录、订阅管理及操作后的公共缓存更新正常。
+4. 秘密链接授权管理、订阅管理及操作后的公共缓存更新正常。
 5. 两个番剧切换、快速选集、换源、暂停/恢复、刷新和浏览器后退不会串台或覆盖错误记录。
 6. 移动端布局、弹幕和播放器控制可用；浏览器禁止自动播放时有可操作的播放入口。
 7. 页面提供 AGPL 许可证、第三方声明和对应版本的可访问源码。`dist/LICENSE.txt`、`dist/THIRD_PARTY_NOTICES.md` 随构建输出。
 8. 公开仓库前检查完整历史和资产来源。删掉最新版本的私密文件不会抹去历史提交；不要未经审查就切换可见性。
 
-Cloudflare 构建通过、页面能打开、源解析成功、视频真正解码播放、GitHub 登录成功是不同的检查项，分别验收并记录结果。
+Cloudflare 构建通过、页面能打开、源解析成功、视频真正解码播放、管理链接授权成功是不同的检查项，分别验收并记录结果。

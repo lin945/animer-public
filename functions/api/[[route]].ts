@@ -1,16 +1,14 @@
 import { Hono, type Context } from 'hono'
-import { verifyAdmin, managementRequest, githubLogin, githubCallback, githubLogout, authConfigured } from '../../server/admin-auth'
+import { verifyAdmin, managementRequest, accessLogin, accessLogout, authConfigured } from '../../server/admin-auth'
 import { mintPlaybackUrl, verifyPlayback, createPlaybackSigner } from '../../server/playback-ticket'
 import { handle } from 'hono/cloudflare-pages'
 
 type Bindings = {
   DB: any
   CACHE: any
-  GITHUB_CLIENT_ID?: string
-  GITHUB_CLIENT_SECRET?: string
+  ADMIN_ACCESS_TOKEN_HASH?: string
   SESSION_SECRET?: string
   APP_ORIGIN?: string
-  ADMIN_GITHUB_ID?: string
 }
 
 const DEFAULT_UA =
@@ -23,8 +21,8 @@ const MAX_RESOLVE_FETCHES = 3
 /** 同一源连续失败多少次后自动下线 */
 const AUTO_DISABLE_AFTER = 3
 
-const app = new Hono<{ Bindings: Bindings; Variables: { admin: { login: string; id: string; provider: 'github' } } }>()
-function routes(method: 'get' | 'post' | 'patch', paths: string[], handler: (c: Context<{ Bindings: Bindings; Variables: { admin: { login: string; id: string; provider: 'github' } } }>) => Response | Promise<Response>) {
+const app = new Hono<{ Bindings: Bindings; Variables: { admin: { login: string; id: string; provider: 'link' } } }>()
+function routes(method: 'get' | 'post' | 'patch', paths: string[], handler: (c: Context<{ Bindings: Bindings; Variables: { admin: { login: string; id: string; provider: 'link' } } }>) => Response | Promise<Response>) {
   for (const path of paths) app[method](path, handler)
 }
 app.use('*', async (c, next) => {
@@ -36,21 +34,25 @@ app.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store')
   }
   const managed = managementRequest(path, c.req.method)
-  if (managed) {
+  const signingIn = path === '/api/auth/access'
+  if (managed || signingIn) {
     c.header('Cache-Control', 'no-store')
-    const identity = await verifyAdmin(c.req.raw, c.env)
-    if (!identity) return c.json({ error: 'Administrator authentication required' }, 403)
-    c.set('admin', identity)
+    if (!signingIn) {
+      const identity = await verifyAdmin(c.req.raw, c.env)
+      if (!identity) return c.json({ error: 'Administrator authentication required' }, 403)
+      c.set('admin', identity)
+    }
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       if (c.req.header('Origin') !== new URL(c.req.url).origin || c.req.header('X-Admin-Request') !== '1') {
         return c.json({ error: 'Same-origin admin request required' }, 403)
       }
       if (!c.req.header('Content-Type')?.startsWith('application/json')) return c.json({ error: 'JSON required' }, 415)
-      if (Number(c.req.header('Content-Length') || 0) > 16384) return c.json({ error: 'Request too large' }, 413)
-      try { await boundedJson(new Response(c.req.raw.clone().body), 16384) } catch { return c.json({ error: 'Valid JSON body of at most 16 KiB required' }, 400) }
+      const bodyLimit = signingIn ? 512 : 16384
+      if (Number(c.req.header('Content-Length') || 0) > bodyLimit) return c.json({ error: 'Request too large' }, 413)
+      try { await boundedJson(new Response(c.req.raw.clone().body), bodyLimit) } catch { return c.json({ error: 'Valid bounded JSON body required' }, 400) }
     }
     await next()
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.res.status < 400) {
+    if (!path.startsWith('/api/auth/') && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.res.status < 400) {
       // Shared cache generation makes a successful admin update invalidate public snapshots.
       try { await c.env.CACHE?.put('public:revision', crypto.randomUUID()) } catch { /* short TTL bounds stale data */ }
     }
@@ -90,10 +92,9 @@ app.use('*', async (c, next) => {
   }
 })
 app.get('/api/admin/session', (c) => c.json({ authenticated: true, ...c.get('admin') }))
-app.get('/api/auth/status', (c) => { c.header('Cache-Control', 'no-store'); return c.json({ configured: authConfigured(c.env), provider: 'github' }) })
-app.get('/api/auth/github/login', (c) => githubLogin(c.req.raw, c.env))
-app.get('/api/auth/github/callback', (c) => githubCallback(c.req.raw, c.env))
-app.post('/api/auth/logout', () => githubLogout())
+app.get('/api/auth/status', (c) => { c.header('Cache-Control', 'no-store'); return c.json({ configured: authConfigured(c.env), provider: 'link' }) })
+app.post('/api/auth/access', (c) => accessLogin(c.req.raw, c.env))
+app.post('/api/auth/logout', () => accessLogout())
 app.onError((_, c) => c.json({ error: 'Service temporarily unavailable' }, 500))
 
 // ============================================================

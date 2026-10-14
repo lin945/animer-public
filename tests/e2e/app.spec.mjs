@@ -120,7 +120,10 @@ test('cancel and navigation stop auto-next countdown', async ({ page, fixture })
 
 test('unauthenticated admin probes session only and never loads management data', async ({ page, fixture }) => {
   await page.goto('/admin');
-  await expect(page.getByText('请使用站点所有者的 GitHub 账号登录。')).toBeVisible();
+  await expect(page.locator('.gate')).toBeVisible();
+  await expect(page.getByRole('button', { name: '重新验证现有会话', exact: true })).toBeVisible();
+  await expect(page.locator('.admin input[type="password"]')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /GitHub/ })).toHaveCount(0);
   await noOverflow(page);
   expect(fixture.requests.filter(r => r.path.startsWith('/api/admin'))).toEqual([
     { path: '/api/admin/session', query: {}, method: 'GET' },

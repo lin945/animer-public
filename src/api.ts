@@ -342,6 +342,18 @@ export async function adminSession(signal?: AbortSignal): Promise<AdminSession> 
   return data
 }
 
+/** Exchange a one-use URL handoff for an HttpOnly session; never persist the capability. */
+export async function adminAccess(token: string, signal?: AbortSignal): Promise<void> {
+  const pending = fetch('/api/auth/access', {
+    method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer', signal,
+    headers: { 'X-Admin-Request': '1', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+  token = ''
+  const response = await pending
+  if (!response.ok) throw new ApiError(response.status, '无法验证管理访问权限')
+}
+
 export async function adminLogout(signal?: AbortSignal): Promise<void> {
   const response = await fetch('/api/auth/logout', {
     method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,

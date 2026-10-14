@@ -1,3 +1,4 @@
+import './admin-access'
 import './assets/main.css'
 
 import { createApp } from 'vue'

@@ -1,3 +1,4 @@
+import { clearAdminAccess } from '../admin-access'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import SearchView from '@/views/SearchView.vue'
@@ -38,3 +39,14 @@ export const router = createRouter({
   },
 })
 
+
+// Capability links are accepted only during fresh-page bootstrap. Cancel SPA
+// secret navigation instead of redirecting: redirectedFrom would retain the secret.
+router.beforeEach((to) => {
+  if (to.path === '/admin' && to.hash.startsWith('#access=')) {
+    clearAdminAccess()
+    window.history.replaceState(null, '', router.currentRoute.value.fullPath)
+    return false
+  }
+  if (to.path !== '/admin') clearAdminAccess()
+})

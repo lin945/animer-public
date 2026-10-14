@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { build } from 'esbuild'
 
-const bundle = await build({ entryPoints: ['functions/api/[[route]].ts'], bundle: true, format: 'esm', platform: 'browser', write: false, minify: true })
+const bundle = await build({ entryPoints: ['functions/api/[[route]].ts'], bundle: true, format: 'esm', platform: 'browser', external: ['node:crypto'], write: false, minify: true })
 const { onRequest } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'))
 
-const ticketBundle = await build({entryPoints:['server/playback-ticket.ts'],bundle:true,format:'esm',platform:'browser',write:false})
+const ticketBundle = await build({entryPoints:['server/playback-ticket.ts'],bundle:true,format:'esm',platform:'browser',external:['node:crypto'],write:false})
 const {mintPlaybackUrl, verifyPlayback} = await import('data:text/javascript;base64,' + Buffer.from(ticketBundle.outputFiles[0].text).toString('base64'))
 const signing = {APP_ORIGIN:'https://site.test', SESSION_SECRET:'synthetic-playback-only-key-32-bytes-long'}
 
